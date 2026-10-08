@@ -7,7 +7,7 @@ import qs.Commons
 import qs.Ui
 import "SpectrumModel.js" as Model
 
-// Live spectrum of what is playing, for tuning speakers.
+// Live spectrum of what is playing.
 // Bar: 10 octave bands. Popup: 60 log bands 20 Hz–20 kHz with lows/mids/highs
 // and peak hold. With an EQ chain configured (musicSink + speakerSink), a
 // Music (pre-EQ) / Speakers (post-EQ) source toggle; otherwise it follows the

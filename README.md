@@ -1,12 +1,11 @@
 # Spectrum
 
-A live frequency analyzer for the [Omarchy](https://omarchy.org) bar. Ten
-octave bands sit in the bar while music plays; point at them and a 60-band
-analyzer opens, split into lows, mids and highs, with peak hold and a
-"balance vs mids" readout. Made for tuning speakers and EQ by ear: change a
-filter, watch the bands move.
+See your music in the [Omarchy](https://omarchy.org) bar. Ten octave bands
+dance in the bar while something plays; point at them and a 60-band
+spectrum opens, split into lows, mids and highs, with peak hold and a
+"balance vs mids" readout.
 
-<img src="preview.png" width="640" alt="The pinned Spectrum card: 60 bars from 20 Hz to 20 kHz tinted as lows, mids and highs, with peak-hold ticks, per-region levels and a Music / Speakers toggle">
+<img src="docs/window.png" width="640" alt="The pinned Spectrum card: 60 bars from 20 Hz to 20 kHz tinted as lows, mids and highs, with peak-hold ticks, per-region levels and a Music / Speakers toggle">
 
 ## Install
 
@@ -41,8 +40,7 @@ omarchy pkg add python-numpy
 band power (pink noise reads flat). The three regions - lows 20-250 Hz, mids
 250 Hz-4 kHz, highs 4-20 kHz - are tinted from your theme and each shows its
 level. Short ticks above the bars hold the peak for 1.2 s. The footer reads
-the lows and highs relative to the mids, which is the number to watch while
-adjusting bass and treble.
+the lows and highs relative to the mids.
 
 **Pausing** stops the capture process outright, so a paused widget costs no
 CPU. The state survives restarts and lives in `~/.config/omarchy/spectrum.json`

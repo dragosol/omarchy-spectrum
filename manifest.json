@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Dragos Robu",
   "license": "MIT",
-  "description": "A live frequency analyzer in your bar. Ten octave bands at a glance; hover for a 60-band, 1/6-octave view split into lows, mids and highs with peak hold and a balance readout, made for tuning speakers and EQ by ear. Read-only: it only listens to a sink monitor, and the capture stops when paused.",
+  "description": "See your music, live in your bar. Ten octave bands move with whatever is playing; hover for a 60-band, 1/6-octave spectrum split into lows, mids and highs, with peak hold and a balance readout, tinted from your theme. Read-only: it only listens to a sink monitor, and the capture stops when paused.",
   "kinds": [
     "bar-widget"
   ],
