@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.dragosol.spectrum",
   "name": "Spectrum",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Dragos Robu",
   "license": "MIT",
   "description": "See your music, live in your bar. Ten octave bands move with whatever is playing; hover for a 60-band, 1/6-octave spectrum split into lows, mids and highs, with peak hold and a balance readout, tinted from your theme. Read-only: it only listens to a sink monitor, and the capture stops when paused.",
