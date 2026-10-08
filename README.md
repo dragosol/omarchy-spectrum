@@ -17,14 +17,9 @@ Omarchy installs third-party plugins disabled unless `--enable` is provided.
 Review the repository before enabling it: shell plugins run unsandboxed with
 your user permissions.
 
-Then add **Spectrum** to the bar from the bar's widget settings (it defaults to
-the right section).
-
-Spectrum needs NumPy. If the card reads *Needs python-numpy*, install it:
-
-```bash
-omarchy pkg add python-numpy
-```
+That is the whole installation: everything Spectrum uses already ships with
+Omarchy. Add **Spectrum** to the bar from the bar's widget settings if it is
+not placed for you (it defaults to the right section).
 
 ## Usage
 
@@ -47,9 +42,9 @@ CPU. The state survives restarts and lives in `~/.config/omarchy/spectrum.json`
 (`{"paused": true}`); scripts can write that file too. While paused, hovering
 no longer previews, but a click still opens the card to resume.
 
-**Cost.** Roughly 2-3 % of one core with only the bar view showing (15 fps,
-10 bands), more while the card is open (30 fps, 60 bands). Nothing runs while
-the bar is hidden or the widget is paused.
+**Cost.** About 2 % of one core with only the bar view showing (15 fps,
+10 bands) and about 6 % while the card is open (30 fps, 60 bands). Nothing
+runs while the bar is hidden or the widget is paused.
 
 ## Configure
 
@@ -99,9 +94,13 @@ rm -f ~/.config/omarchy/spectrum.json
 
 ## Dependencies
 
-- Quickshell and the Omarchy shell QML modules (a normal Omarchy installation)
-- PipeWire's `pw-record` (`pipewire-audio`, installed with Omarchy)
-- Python 3 and NumPy (`python-numpy`)
+All installed with Omarchy; nothing extra to add:
+
+- Quickshell and the Omarchy shell QML modules
+- PipeWire's `pw-record` (`pipewire-audio`)
+- Python 3, standard library only
+- FFTW (`libfftw3f`), loaded through Python's `ctypes`; it is a dependency of
+  `pipewire-audio` and `alsa-utils`, so every Omarchy system has it
 
 ## Security and privacy
 

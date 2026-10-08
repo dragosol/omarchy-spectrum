@@ -34,8 +34,11 @@ Levels are band power in dBFS: a full-scale sine inside a band reads 0 dB,
 so pink noise reads flat (RTA convention).
 """
 
+import array
 import ctypes
+import ctypes.util
 import fcntl
+import math
 import os
 import select
 import signal
@@ -44,12 +47,33 @@ import subprocess
 import sys
 import time
 
-try:
-    import numpy as np
-except ImportError:
+
+# The FFT comes from FFTW, which every Omarchy system already has (pipewire-audio
+# and alsa-utils depend on it), so the plugin needs nothing beyond what
+# `omarchy plugin add` puts in place. Everything else is plain Python.
+FFTW_ESTIMATE = 1 << 6
+
+
+def load_fftw():
+    for name in ("libfftw3f.so.3", ctypes.util.find_library("fftw3f")):
+        if not name:
+            continue
+        try:
+            lib = ctypes.CDLL(name)
+        except OSError:
+            continue
+        lib.fftwf_plan_dft_r2c_1d.restype = ctypes.c_void_p
+        lib.fftwf_plan_dft_r2c_1d.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+        lib.fftwf_execute.argtypes = [ctypes.c_void_p]
+        return lib
+    return None
+
+
+FFTW = load_fftw()
+if FFTW is None:
     # Say so once and idle until the widget lets go (EOF on stdin), rather
     # than exiting into a restart loop.
-    sys.stdout.write("S missing python-numpy\n")
+    sys.stdout.write("S missing fftw\n")
     sys.stdout.flush()
     sys.stdin.read()
     sys.exit(0)
@@ -72,11 +96,11 @@ MODES = {
 }
 
 # 10 octave bands (31.25 Hz .. 16 kHz centres) for the bar mini view.
-OCT_CENTRES = 31.25 * 2.0 ** np.arange(10)
-OCT_EDGES = np.concatenate([OCT_CENTRES / np.sqrt(2), [OCT_CENTRES[-1] * np.sqrt(2)]])
+OCT_CENTRES = [31.25 * 2.0 ** i for i in range(10)]
+OCT_EDGES = [c / math.sqrt(2) for c in OCT_CENTRES] + [OCT_CENTRES[-1] * math.sqrt(2)]
 # 60 log-spaced bands 20 Hz .. 20 kHz (~1/6 octave) for the popup.
-POP_EDGES = np.geomspace(20.0, 20000.0, 61)
-REGION_EDGES = np.array([20.0, 250.0, 4000.0, 20000.0])
+POP_EDGES = [20.0 * 1000.0 ** (i / 60) for i in range(61)]
+REGION_EDGES = [20.0, 250.0, 4000.0, 20000.0]
 
 PEAK_HOLD = 1.2      # s
 PEAK_FALL = 18.0     # dB/s once the hold expires
@@ -92,85 +116,117 @@ def set_pdeathsig(sig):
 
 
 class Analyzer:
+    """Hann-windowed FFT band levels. The window is applied in the frequency
+    domain (periodic Hann = the 3-tap kernel -1/4, 1/2, -1/4 over adjacent
+    bins), so the per-frame Python work is one pass over the bins."""
+
     def __init__(self, mode):
         self.set_mode(mode)
 
     def set_mode(self, mode):
         cfg = MODES.get(mode, MODES["bar"])
         self.mode = mode if mode in MODES else "bar"
-        self.n = cfg["n"]
+        self.n = n = cfg["n"]
         self.fps = cfg["fps"]
         self.fall = cfg["fall"]
-        self.window = np.hanning(self.n).astype(np.float32)
-        wsum = float(self.window.sum())
-        enbw = self.n * float((self.window ** 2).sum()) / (wsum * wsum)
+        self.nbins = n // 2 + 1
+        # periodic Hann: sum w = n/2, sum w^2 = 3n/8, so ENBW = 1.5 bins.
         # |X|^2 * scale == band power where a full-scale sine sums to 1.0
-        self.scale = 4.0 / (wsum * wsum) / enbw
-        df = RATE / self.n
-        nbins = self.n // 2 + 1
-        # bin k spans [(k-.5)df, (k+.5)df]; cumulative power at those edges
-        self.bin_edges = (np.arange(nbins + 1) - 0.5) * df
-        self.ring = np.zeros(self.n, dtype=np.float32)
-        self.bar = np.full(len(OCT_CENTRES), FLOOR)
-        self.pop = np.full(len(POP_EDGES) - 1, FLOOR)
-        self.peak = np.full(len(POP_EDGES) - 1, FLOOR)
-        self.peak_t = np.zeros(len(POP_EDGES) - 1)
-        self.region = np.full(3, FLOOR)
+        self.scale = 4.0 / (n * n / 4.0) / 1.5
+        self.df = RATE / n
+        self.ring = (ctypes.c_float * n)()
+        self.fin = (ctypes.c_float * n)()
+        self.fout = (ctypes.c_float * (2 * self.nbins))()
+        self.plan = FFTW.fftwf_plan_dft_r2c_1d(n, self.fin, self.fout, FFTW_ESTIMATE)
+        self.bar = [FLOOR] * len(OCT_CENTRES)
+        self.pop = [FLOOR] * (len(POP_EDGES) - 1)
+        self.peak = [FLOOR] * (len(POP_EDGES) - 1)
+        self.peak_t = [0.0] * (len(POP_EDGES) - 1)
+        self.region = [FLOOR] * 3
+
+    def samples(self):
+        return array.array("f", bytes(self.ring))
 
     def push(self, mono):
-        m = len(mono)
-        if m >= self.n:
-            self.ring[:] = mono[-self.n:]
+        """Append an array('f') of mono samples to the ring."""
+        n, m = self.n, len(mono)
+        base = ctypes.addressof(self.ring)
+        if m >= n:
+            ctypes.memmove(base, mono.buffer_info()[0] + (m - n) * 4, n * 4)
         else:
-            self.ring[:-m] = self.ring[m:]
-            self.ring[-m:] = mono
+            ctypes.memmove(base, base + m * 4, (n - m) * 4)
+            ctypes.memmove(base + (n - m) * 4, mono.buffer_info()[0], m * 4)
 
-    @staticmethod
-    def _db(p):
-        return np.maximum(10.0 * np.log10(np.maximum(p, 1e-12)), FLOOR)
+    def _cumulative(self):
+        ctypes.memmove(self.fin, self.ring, self.n * 4)
+        FFTW.fftwf_execute(self.plan)
+        out = self.fout[:]
+        re, im = out[0::2], out[1::2]
+        last = self.nbins - 1
+        # neighbours past either end mirror (real input: X[-k] = conj X[k])
+        re_l = [re[1]] + re[:-1]
+        im_l = [-im[1]] + im[:-1]
+        re_r = re[1:] + [re[last - 1]]
+        im_r = im[1:] + [-im[last - 1]]
+        sc = self.scale
+        power = [((0.5 * a - 0.25 * (b + c)) ** 2 + (0.5 * d - 0.25 * (e + f)) ** 2) * sc
+                 for a, b, c, d, e, f in zip(re, re_l, re_r, im, im_l, im_r)]
+        cum = [0.0]
+        total = 0.0
+        for v in power:
+            total += v
+            cum.append(total)
+        return cum
 
     def _bands(self, cum, edges):
-        c = np.interp(edges, self.bin_edges, cum)
-        return self._db(np.diff(c))
+        # bin k spans [(k-.5)df, (k+.5)df]; cum[j] is the power below edge j
+        top = len(cum) - 1
+        vals = []
+        for e in edges:
+            x = e / self.df + 0.5
+            if x <= 0:
+                vals.append(0.0)
+            elif x >= top:
+                vals.append(cum[top])
+            else:
+                i = int(x)
+                vals.append(cum[i] + (cum[i + 1] - cum[i]) * (x - i))
+        return [max(10.0 * math.log10(max(b - a, 1e-12)), FLOOR) for a, b in zip(vals, vals[1:])]
 
     @staticmethod
     def _release(disp, new, fall_step):
-        rising = new > disp
-        out = np.maximum(disp - fall_step, new)
-        # light attack smoothing so bars don't flicker on every hop
-        out[rising] = disp[rising] + (new[rising] - disp[rising]) * 0.7
-        return np.maximum(out, FLOOR)
+        out = []
+        for d, v in zip(disp, new):
+            # light attack smoothing so bars don't flicker on every hop
+            o = d + (v - d) * 0.7 if v > d else max(d - fall_step, v)
+            out.append(max(o, FLOOR))
+        return out
 
     def frame(self, fresh, now, dt):
-        if fresh:
-            spec = np.fft.rfft(self.ring * self.window)
-            power = (spec.real ** 2 + spec.imag ** 2) * self.scale
-            cum = np.concatenate([[0.0], np.cumsum(power)])
-            new_bar = self._bands(cum, OCT_EDGES)
-        else:
-            cum = None
-            new_bar = np.full(len(OCT_CENTRES), FLOOR)
+        cum = self._cumulative() if fresh else None
+        new_bar = self._bands(cum, OCT_EDGES) if cum else [FLOOR] * len(self.bar)
         self.bar = self._release(self.bar, new_bar, self.fall * dt)
         if self.mode != "popup":
             return
-        if cum is not None:
+        if cum:
             new_pop = self._bands(cum, POP_EDGES)
             new_reg = self._bands(cum, REGION_EDGES)
         else:
-            new_pop = np.full(len(self.pop), FLOOR)
-            new_reg = np.full(3, FLOOR)
+            new_pop = [FLOOR] * len(self.pop)
+            new_reg = [FLOOR] * 3
         self.pop = self._release(self.pop, new_pop, self.fall * dt)
-        up = self.pop >= self.peak
-        self.peak[up] = self.pop[up]
-        self.peak_t[up] = now
-        expired = (~up) & (now - self.peak_t > PEAK_HOLD)
-        self.peak[expired] = np.maximum(self.peak[expired] - PEAK_FALL * dt, self.pop[expired])
-        self.region = np.maximum(self.region - REGION_FALL * dt, new_reg)
+        for i, v in enumerate(self.pop):
+            if v >= self.peak[i]:
+                self.peak[i] = v
+                self.peak_t[i] = now
+            elif now - self.peak_t[i] > PEAK_HOLD:
+                self.peak[i] = max(self.peak[i] - PEAK_FALL * dt, v)
+        self.region = [max(r - REGION_FALL * dt, v) for r, v in zip(self.region, new_reg)]
 
     def silent(self):
         if self.mode == "popup":
-            return bool((self.pop <= FLOOR).all() and (self.peak <= FLOOR).all())
-        return bool((self.bar <= FLOOR).all())
+            return all(v <= FLOOR for v in self.pop) and all(v <= FLOOR for v in self.peak)
+        return all(v <= FLOOR for v in self.bar)
 
     def line(self):
         fmt = lambda a: " ".join("%.1f" % v for v in a)
@@ -251,22 +307,23 @@ class Capture:
                 break
             except OSError as exc:
                 self._fail("read %s" % exc)
-                return np.empty(0, dtype=np.float32)
+                return array.array("f")
             if not data:
                 self._fail("pw-record exited")
-                return np.empty(0, dtype=np.float32)
+                return array.array("f")
             chunks.append(data)
         if not chunks:
-            return np.empty(0, dtype=np.float32)
+            return array.array("f")
         self.failures = 0
         buf = self.pending + b"".join(chunks)
         usable = len(buf) - (len(buf) % 8)
         self.pending = buf[usable:]
         if usable == 0:
-            return np.empty(0, dtype=np.float32)
-        st = np.frombuffer(buf[:usable], dtype=np.float32).reshape(-1, 2)
-        mono = (st[:, 0] + st[:, 1]) * 0.5
-        return np.nan_to_num(mono, nan=0.0, posinf=0.0, neginf=0.0)
+            return array.array("f")
+        st = array.array("f", buf[:usable])
+        # NaN and inf fail the range test and become silence
+        return array.array("f", [(a + b) * 0.5 if -64.0 < a + b < 64.0 else 0.0
+                                 for a, b in zip(st[0::2], st[1::2])])
 
 
 def open_ctl():
@@ -358,7 +415,7 @@ def main():
                     raw, stdin_buf = stdin_buf.split(b"\n", 1)
                     cmd, _, arg = raw.decode("utf-8", "replace").strip().partition(" ")
                     if cmd == "mode" and arg in MODES and arg != an.mode:
-                        ring = an.ring
+                        ring = an.samples()
                         an.set_mode(arg)
                         an.push(ring)
                         quiet_printed = False

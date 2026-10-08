@@ -117,8 +117,13 @@ def main():
     card.alpha_composite(icon, (92 + (tile - icon.width) // 2, 70 + (tile - icon.height) // 2))
 
     x = 98
-    d.text((x - 4, 192), a.name, font=font(100, "Bold"), fill=WHITE)
-    d.text((x - 4, 292), a.name2, font=font(100, "Bold"), fill=accent)
+    # the name may not run into the window: shrink from 100 px until both lines fit
+    room = wx - 40 - (x - 4)
+    size = 100
+    while size > 60 and max(d.textlength(t, font=font(size, "Bold")) for t in (a.name, a.name2)) > room:
+        size -= 2
+    d.text((x - 4, 192 + (100 - size)), a.name, font=font(size, "Bold"), fill=WHITE)
+    d.text((x - 4, 192 + (100 - size) + size), a.name2, font=font(size, "Bold"), fill=accent)
     y = 432
     for line in a.tagline.split("|"):
         d.text((x, y), line, font=font(36), fill=DIM)
