@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.dragosol.spectrum",
+  "name": "Spectrum",
+  "version": "1.0.0",
+  "author": "Dragos Robu",
+  "license": "MIT",
+  "description": "A live frequency analyzer in your bar. Ten octave bands at a glance; hover for a 60-band, 1/6-octave view split into lows, mids and highs with peak hold and a balance readout, made for tuning speakers and EQ by ear. Read-only: it only listens to a sink monitor, and the capture stops when paused.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "qml/SpectrumWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Spectrum",
+    "description": "Mini octave-band spectrum in the bar; hover for a 60-band analyzer (lows/mids/highs, peak hold), click to pin, middle-click or the pause button to stop the capture.",
+    "category": "Audio",
+    "aliases": [
+      "spectrum",
+      "analyzer",
+      "eq",
+      "audio"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "musicSink": "",
+      "speakerSink": ""
+    },
+    "schema": [
+      {
+        "key": "musicSink",
+        "type": "string",
+        "label": "Music sink (before EQ)",
+        "defaultValue": "",
+        "description": "Optional. PipeWire node name of your EQ's input sink, e.g. a filter-chain. Set both sinks to get a Music / Speakers toggle; leave empty to follow the default output."
+      },
+      {
+        "key": "speakerSink",
+        "type": "string",
+        "label": "Speaker sink (after EQ)",
+        "defaultValue": "",
+        "description": "Optional. PipeWire node name of the hardware sink the EQ feeds (see `wpctl status` / `pw-cli ls Node`)."
+      }
+    ]
+  }
+}
