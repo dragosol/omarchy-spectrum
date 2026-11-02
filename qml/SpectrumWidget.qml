@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Services.Pipewire
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "SpectrumModel.js" as Model
 
@@ -305,14 +306,14 @@ Panel {
 
   // ---- theme --------------------------------------------------------------
   property var palette: ({})
-  readonly property var tints: Model.pickTints(palette, Color.foreground, Color.accent)
-  readonly property color popupText: Color.popups.text
-  readonly property color popupDim: Util.alpha(Color.popups.text, 0.55)
+  readonly property var tints: Model.pickTints(palette, Commons.Color.foreground, Commons.Color.accent)
+  readonly property color popupText: Commons.Color.popups.text
+  readonly property color popupDim: Util.alpha(Commons.Color.popups.text, 0.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   FileView {
     id: paletteFile
-    path: Color.currentThemePath + "/colors.toml"
+    path: Commons.Color.currentThemePath + "/colors.toml"
     watchChanges: true
     printErrors: false
     onLoaded: root.palette = Model.parsePalette(text())
@@ -381,7 +382,7 @@ Panel {
         anchors.centerIn: parent
         rotation: root.verticalBar ? 90 : 0
         text: "󰏤"
-        color: root.bar ? root.bar.barForeground : Color.foreground
+        color: root.bar ? root.bar.barForeground : Commons.Color.foreground
         opacity: 0.45
         font.family: root.fontFamily
         font.pixelSize: Math.max(10, Math.round(mini.height * 0.9))
@@ -395,7 +396,7 @@ Panel {
         anchors.horizontalCenter: parent.horizontalCenter
         width: parent.width
         height: 1
-        color: root.bar ? root.bar.barForeground : Color.foreground
+        color: root.bar ? root.bar.barForeground : Commons.Color.foreground
         opacity: 0.6
       }
     }
@@ -412,7 +413,7 @@ Panel {
     readonly property string barPos: root.bar ? root.bar.position : "top"
     readonly property int gap: Style.gapsOut
     readonly property int margin: Style.gapsOut
-    readonly property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
+    readonly property var borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
     readonly property real screenW: screen ? screen.width : 0
     readonly property real screenH: screen ? screen.height : 0
     readonly property real barW: anchorWindow ? anchorWindow.width : screenW
@@ -482,7 +483,7 @@ Panel {
     BorderSurface {
       id: card
       anchors.fill: parent
-      color: Color.popups.background
+      color: Commons.Color.popups.background
       borderSpec: popup.borderSpec
       padding: Style.spacing.popupPadding
       radius: Style.cornerRadius
